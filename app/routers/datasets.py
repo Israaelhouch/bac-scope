@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ..db import get_connection
-from ..ingest import load_text
+from ..ingest import decode_bytes, load_text
 
 router = APIRouter(tags=["datasets"])
 
@@ -38,7 +38,7 @@ async def upload_dataset(
         raise HTTPException(400, "الملف يجب أن يكون من نوع CSV")
 
     raw = await file.read()
-    text = raw.decode("utf-8-sig", errors="replace")
+    text = decode_bytes(raw)
 
     conn = get_connection()  # writable
     try:

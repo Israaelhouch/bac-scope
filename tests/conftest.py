@@ -20,10 +20,14 @@ from fastapi.testclient import TestClient  # noqa: E402
 from scripts import seed  # noqa: E402
 from app.main import app  # noqa: E402
 
+# Tests must run on the controlled, committed sample — never on whatever happens
+# to be in data/raw. Force the sample directory.
+seed.RAW_DIR = Path("/__no_raw_for_tests__")
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _seed_db():
-    """Build the test database once for the whole session."""
+    """Build the test database once for the whole session (from data/sample)."""
     seed.main()
 
 

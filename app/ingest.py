@@ -29,6 +29,31 @@ def _clean_ar(text) -> str:
     return re.sub(r"\s+", " ", _AR_MARKS.sub("", str(text))).strip()
 
 
+def decode_bytes(raw: bytes) -> str:
+    """Decode CSV bytes robustly across encodings.
+
+    Most files are UTF-8 (sometimes with a few stray bad bytes). A genuine legacy
+    Arabic file (CP1256) is rarer. Strategy: clean UTF-8 first; if that fails,
+    prefer UTF-8 with the few bad bytes replaced (keeps the Arabic intact) and
+    only fall back to CP1256 when the file clearly isn't UTF-8 (many bad bytes) —
+    otherwise CP1256 would turn valid UTF-8 Arabic into mojibake.
+    """
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    utf8_replaced = raw.decode("utf-8", errors="replace")
+    bad = utf8_replaced.count("�")
+    if bad <= max(50, len(raw) // 50):      # tiny fraction -> it really is UTF-8
+        return utf8_replaced
+    for enc in ("cp1256", "iso-8859-6"):     # genuinely legacy-encoded
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return utf8_replaced
+
+
 # Subject names differ across files (with/without "ال", hamza vs bare alef,
 # spacing, tatweel/diacritics). Canonicalize so the same subject isn't split.
 SUBJECT_ALIASES = {
@@ -218,8 +243,13 @@ def load_export(
         if reg is None:
             continue
         name = str(cell(row, "student_name") or "").strip()
-        if not name:
-            continue  # incomplete record: reg + status only, no name/section/grades
+        # Skip malformed rows: no name, or a number in the name slot (a sign the
+        # columns are shifted — e.g. a grade landed where the name should be).
+        if not name or _to_float(name) is not None:
+            continue
+        stream_val = normalize_stream(cell(row, "section") or "")
+        if not stream_val:
+            continue  # no section -> incomplete/misaligned row
         reg = int(reg)
         passed, status, mention = parse_result(cell(row, "result_status") or "")
 
@@ -233,7 +263,7 @@ def load_export(
                 (str(cell(row, "cin_number")).strip() or None) if cell(row, "cin_number") else None,
                 name,
                 _clean_ar(cell(row, "institution")) or None,
-                normalize_stream(cell(row, "section") or ""),
+                stream_val,
                 _clean_ar(cell(row, "result_status")) or None,
                 passed,
                 status,
@@ -293,9 +323,9 @@ def load_text(
 
 
 def load_csv(path: str | Path, stream: str, conn: sqlite3.Connection) -> int:
-    """Load one CSV file from disk (any supported format). Returns rows inserted."""
+    """Load one CSV file from disk (any supported format/encoding). Returns rows inserted."""
     path = Path(path)
-    text = path.read_text(encoding="utf-8-sig")
+    text = decode_bytes(path.read_bytes())
     return load_text(text, stream, path.name, conn)
 
 

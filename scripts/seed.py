@@ -43,17 +43,28 @@ def main() -> None:
     print(f"Seeding from: {source.relative_to(_BASE.parent)}")
     reset_db()
     conn = get_connection()
-    total = 0
-    for filename, stream in FILE_TO_STREAM.items():
-        path = source / filename
-        if not path.exists():
-            print(f"  ! missing {filename}, skipping")
+
+    files = sorted(source.glob("*.csv"))
+    if not files:
+        print(f"  ! no CSV files found in {source}")
+        conn.close()
+        return
+
+    total, loaded = 0, 0
+    for path in files:
+        # Known files use their mapped stream; any other file uses its filename
+        # as the stream (export-format files ignore this and read `section`).
+        stream = FILE_TO_STREAM.get(path.name, path.stem)
+        try:
+            n = load_csv(path, stream, conn)
+        except Exception as exc:  # noqa: BLE001 — keep going if one file is bad
+            print(f"  ! {path.name}: {exc}")
             continue
-        n = load_csv(path, stream, conn)
         total += n
-        print(f"  + {stream:<14} {n:>4} students  ({filename})")
+        loaded += 1
+        print(f"  + {stream:<14} {n:>4} students  ({path.name})")
     conn.close()
-    print(f"\nSeed complete: {total} students across {len(FILE_TO_STREAM)} streams.")
+    print(f"\nSeed complete: {total} students from {loaded}/{len(files)} file(s).")
 
 
 if __name__ == "__main__":
