@@ -1,5 +1,11 @@
 """Unit tests for ingestion parsing."""
-from app.ingest import _to_float, normalize_subject, parse_result
+from app.ingest import (
+    _clean_ar,
+    _to_float,
+    normalize_stream,
+    normalize_subject,
+    parse_result,
+)
 
 
 def test_parse_result_passed():
@@ -7,7 +13,20 @@ def test_parse_result_passed():
 
 
 def test_parse_result_passed_mid():
-    assert parse_result("ناجح بملاحظة متوسّط") == (1, "ناجح", "متوسّط")
+    # diacritics (shadda) are stripped, so متوسّط -> متوسط (consistent across formats)
+    assert parse_result("ناجح بملاحظة متوسّط") == (1, "ناجح", "متوسط")
+
+
+def test_clean_ar_strips_tatweel_and_diacritics():
+    assert _clean_ar("الـرِّيـاضـيـات") == "الرياضيات"
+    assert _clean_ar("الإنـقـلـيـزيَّـة") == "الإنقليزية"
+
+
+def test_normalize_stream_variants():
+    assert normalize_stream("إقتصاد و تصرف") == "اقتصاد وتصرف"
+    assert normalize_stream("الآداب") == "آداب"
+    assert normalize_stream("علوم الاعلامية") == "علوم الإعلامية"
+    assert normalize_stream("رياضة") == "رياضة"   # already canonical
 
 
 def test_parse_result_referred():
