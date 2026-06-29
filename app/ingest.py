@@ -14,6 +14,28 @@ import pandas as pd
 
 from .db import get_connection, init_db
 
+# Subject names differ across the 7 source files (with/without "ال", hamza vs
+# bare alef, spacing). Canonicalize variants so the same subject isn't split.
+SUBJECT_ALIASES = {
+    "إعلامية": "الإعلامية",
+    "الاعلامية": "الإعلامية",
+    "إنقليزية": "الإنقليزية",
+    "الانقليزية": "الإنقليزية",
+    "عربية": "العربية",
+    "فرنسية": "الفرنسية",
+    "فلسفة": "الفلسفة",
+    "رياضيات": "الرياضيات",
+    "علوم فيزيائية": "العلوم الفيزيائية",
+    "التاريخ و الجغرافيا": "التاريخ والجغرافيا",
+}
+
+
+def normalize_subject(name: str) -> str:
+    """Collapse whitespace and map known spelling variants to one canonical name."""
+    cleaned = " ".join(str(name).strip().split())
+    return SUBJECT_ALIASES.get(cleaned, cleaned)
+
+
 # The 7 columns shared across every stream file. Everything else is a subject.
 CORE_COLUMNS = {
     "رقم التسجيل":   "registration_number",
@@ -26,24 +48,28 @@ CORE_COLUMNS = {
 }
 
 
-def parse_result(raw: str) -> tuple[int, str]:
-    """Return (passed, mention) from the Arabic النتيجة text.
+def parse_result(raw: str) -> tuple[int, str, str | None]:
+    """Return (passed, status, mention) from the Arabic النتيجة text.
+
+    - passed : 1 only if ناجح, else 0
+    - status : ناجح / مؤجل / مرفوض (the outcome category)
+    - mention: honor grade (حسن جدا / حسن / قريب من الحسن / متوسّط) for passed
+               students only; None otherwise.
 
     Examples:
-      'ناجح بملاحظة حسن جدا'        -> (1, 'حسن جدا')
-      'ناجح بملاحظة قريب من الحسن'  -> (1, 'قريب من الحسن')
-      'مؤجل إلى دورة المراقبة'      -> (0, 'مؤجل')
-      'مرفوض'                       -> (0, 'مرفوض')
+      'ناجح بملاحظة حسن جدا'   -> (1, 'ناجح', 'حسن جدا')
+      'مؤجل إلى دورة المراقبة' -> (0, 'مؤجل', None)
+      'مرفوض'                  -> (0, 'مرفوض', None)
     """
     s = (raw or "").strip()
     if s.startswith("ناجح"):
         mention = s.replace("ناجح بملاحظة", "").replace("ناجح", "").strip()
-        return 1, (mention or "ناجح")
+        return 1, "ناجح", (mention or None)
     if "مؤجل" in s:
-        return 0, "مؤجل"
+        return 0, "مؤجل", None
     if "مرفوض" in s:
-        return 0, "مرفوض"
-    return 0, (s or "غير محدد")
+        return 0, "مرفوض", None
+    return 0, "غير محدد", None
 
 
 def _to_float(value) -> float | None:
@@ -87,13 +113,13 @@ def load_dataframe(
         if reg is None:
             continue
         reg = int(reg)
-        passed, mention = parse_result(row.get("النتيجة", ""))
+        passed, status, mention = parse_result(row.get("النتيجة", ""))
 
         conn.execute(
             """INSERT OR REPLACE INTO students
                (registration_number, id_number, name, institution, stream,
-                result_raw, passed, mention, total, moyenne)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                result_raw, passed, status, mention, total, moyenne)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 reg,
                 (str(row.get("رقم ب.ت.و")).strip() if row.get("رقم ب.ت.و") else None),
@@ -102,6 +128,7 @@ def load_dataframe(
                 stream,
                 str(row.get("النتيجة", "")).strip() or None,
                 passed,
+                status,
                 mention,
                 _to_float(row.get("المجموع")),
                 _to_float(row.get("المعدل السنوي")),
@@ -115,7 +142,7 @@ def load_dataframe(
             if score is not None:
                 conn.execute(
                     "INSERT INTO grades (registration_number, subject, score) VALUES (?,?,?)",
-                    (reg, subject, score),
+                    (reg, normalize_subject(subject), score),
                 )
         inserted += 1
 

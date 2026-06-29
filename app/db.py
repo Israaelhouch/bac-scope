@@ -21,9 +21,10 @@ CREATE TABLE IF NOT EXISTS students (
     institution          TEXT,
     stream               TEXT NOT NULL,
     result_raw           TEXT,
-    passed               INTEGER NOT NULL DEFAULT 0,  -- 0/1
-    mention              TEXT,
-    total                REAL,   -- المجموع (final exam total)
+    passed               INTEGER NOT NULL DEFAULT 0,  -- 1 only if ناجح
+    status               TEXT,   -- ناجح / مؤجل / مرفوض
+    mention              TEXT,   -- honor grade (حسن جدا…) for passed only, else NULL
+    total                REAL,   -- معدل الباكالوريا (final bac average)
     moyenne              REAL    -- المعدل السنوي (annual average)
 );
 
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS datasets (
     uploaded_at  TEXT
 );
 
+CREATE INDEX IF NOT EXISTS idx_students_status      ON students(status);
 CREATE INDEX IF NOT EXISTS idx_students_stream      ON students(stream);
 CREATE INDEX IF NOT EXISTS idx_students_institution ON students(institution);
 CREATE INDEX IF NOT EXISTS idx_grades_reg           ON grades(registration_number);

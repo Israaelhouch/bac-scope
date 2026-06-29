@@ -11,7 +11,8 @@ class Student(BaseModel):
     stream: str
     result_raw: str | None = None
     passed: bool
-    mention: str | None = None
+    status: str | None = None        # ناجح / مؤجل / مرفوض
+    mention: str | None = None        # honor grade, passed only
     total: float | None = None
     moyenne: float | None = None
 
@@ -38,7 +39,8 @@ class Institution(BaseModel):
     count: int
     passed: int
     pass_rate: float          # 0..1
-    avg_moyenne: float | None = None
+    avg_bac: float | None = None      # AVG(total) — معدل الباك
+    avg_annual: float | None = None   # AVG(moyenne) — المعدل السنوي
 
 
 class StreamSummary(BaseModel):
@@ -46,4 +48,5 @@ class StreamSummary(BaseModel):
     count: int
     passed: int
     pass_rate: float
-    avg_moyenne: float | None = None
+    avg_bac: float | None = None
+    avg_annual: float | None = None
