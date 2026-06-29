@@ -3,11 +3,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .routers import datasets, institutions, meta, stats, students
+# Load .env (GROQ_API_KEY, etc.) before anything reads the environment.
+load_dotenv()
+
+from .routers import ask, datasets, institutions, meta, stats, students  # noqa: E402
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -30,6 +34,7 @@ app.include_router(students.router)
 app.include_router(institutions.router)
 app.include_router(stats.router)
 app.include_router(datasets.router)
+app.include_router(ask.router)
 
 
 @app.options("/{rest_of_path:path}", include_in_schema=False)

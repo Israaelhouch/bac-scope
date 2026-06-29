@@ -47,12 +47,53 @@ Then open:
 | `GET /students` | Filtered, sorted, paginated list of students |
 | `GET /students/{registration_number}` | One student + all their grades |
 | `GET /stats/pass-rates` | Pass rate per `stream` or `institution` |
-| `GET /stats/mentions` | Mention distribution (optional `stream`) |
+| `GET /stats/status` | Outcome breakdown — ناجح / مؤجل / مرفوض (optional `stream`) |
+| `GET /stats/mentions` | Honor-grade distribution, passed students (optional `stream`) |
 | `GET /stats/subject-averages` | Average grade per subject (optional `stream`) |
 | `GET /stats/top-performers` | Top achievers; `per_stream`, `subject`, `by`, `limit` |
 | `GET /stats/remontada` | Biggest gap of final total over annual average |
 | `GET /datasets` | List of loaded CSV files (stream, rows, uploaded_at) |
 | `POST /datasets` | Upload a CSV — auto-normalized and merged into the database |
+| `GET /ask/status` | Whether the natural-language endpoint is enabled |
+| `POST /ask` | **Natural-language question → SQL → result + auto-chart** |
+
+### `/ask` — natural language (AI)
+
+Send a question; the LLM writes SQL, the server validates it (SELECT-only,
+single statement, enforced LIMIT) and runs it **read-only**, then auto-picks a
+chart by result shape.
+
+Optionally scope the question to a subset (soft-enforced via the prompt):
+
+```
+POST /ask
+{ "question": "أفضل 5",
+  "scope": { "stream": "رياضيات", "passed": true, "min_avg": 15 } }
+```
+
+```
+POST /ask   { "question": "أفضل 5 معدلات في الرياضيات" }
+
+{
+  "sql": "SELECT name, moyenne FROM students WHERE stream='رياضيات' ORDER BY moyenne DESC LIMIT 5",
+  "columns": ["name", "moyenne"],
+  "row_count": 5,
+  "data": [ ... ],
+  "kind": "bar",            // stat | bar | table | empty
+  "chart": { ...ApexCharts spec... }
+}
+```
+
+**Enable it:** get a free key at https://console.groq.com, then in `.env`:
+
+```
+GROQ_API_KEY=your_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+Without a key, `/ask` returns `503` and the rest of the API works normally.
+Safety: the LLM only proposes SQL; writes are blocked by validation **and** by a
+read-only database connection.
 
 **Every `/stats/*` response has the same shape:** raw `data` plus a full
 **ApexCharts** spec.
@@ -82,11 +123,18 @@ Then open:
 |---|---|---|
 | `stream` | Stream (شعبة) | `stream=رياضيات` |
 | `institution` | Exact school name | `institution=معهد بوعرقوب` |
-| `mention` | Mention (ملاحظة) | `mention=حسن جدا` |
-| `passed` | Pass/fail | `passed=true` |
-| `min_avg` / `max_avg` | Annual-average range | `min_avg=15` |
+| `status` | Outcome: ناجح / مؤجل / مرفوض | `status=مؤجل` |
+| `mention` | Honor grade (passed only) | `mention=حسن جدا` |
+| `passed` | Passed (ناجح) only — for pass-rate | `passed=true` |
+| `min_bac` / `max_bac` | **Bac average** range — معدل الباك (`total`) | `min_bac=15` |
+| `min_annual` / `max_annual` | **Annual average** range — المعدل السنوي (`moyenne`) | `min_annual=12` |
 | `search` | Name contains | `search=محمد` |
-| `sort` | Sort field, `-` = desc | `sort=-moyenne` |
+| `sort` | Sort field, `-` = desc (`total`, `moyenne`, `name`, …) | `sort=-total` |
+
+> **Two averages, kept distinct:** `total` = معدل الباكالوريا (the final bac
+> average, determines pass/mention) and `moyenne` = المعدل السنوي (annual average).
+> Plain "معدل" means `total`. Both are filterable, sortable, and aggregated
+> (`avg_bac` / `avg_annual` on `/institutions` and `/streams`).
 | `limit` / `offset` | Pagination | `limit=20&offset=40` |
 
 ### `/institutions` params
@@ -110,11 +158,45 @@ GET /students?search=محمد
 curl -F "file=@results_2026.csv" -F "stream=رياضيات" http://127.0.0.1:8000/datasets
 ```
 
-The uploaded CSV must contain at least `رقم التسجيل`, `الاسم`, `النتيجة`
-(other columns are treated as subject grades). Re-uploading a student
-(same registration number) updates their record.
+Two CSV formats are auto-detected:
+
+1. **Arabic format** — Arabic headers (`رقم التسجيل`, `الاسم`, `النتيجة`, …),
+   one column per named subject (the original files).
+2. **Export format** — English headers (`registration_number`, `student_name`,
+   `section`, `result_status`, `overall_grade`, `annual_average`) followed by a
+   variable number of `grade_N` / `subject_N` pairs.
+
+Both are normalized the same way (tatweel + diacritics stripped, subject/stream
+names canonicalized). Rows without a name, or files matching neither format, are
+rejected. Re-uploading a student (same registration number) updates the record.
 
 ---
+
+## Tests
+
+```bash
+pytest            # unit + API integration tests (runs on an isolated temp DB)
+```
+
+Covers ingestion parsing, subject normalization, SQL validation (SELECT-only,
+limit injection, write rejection), the auto-viz chooser, and the API endpoints
+(filters, cascading, stats shape, status, upload validation).
+
+## Evaluating /ask (text-to-SQL accuracy)
+
+A regression suite measures `/ask` by **execution accuracy**: each case has a
+question + a known-correct "gold" SQL; the runner generates SQL from the
+question, runs both read-only, and compares the *results*.
+
+```bash
+python -m scripts.eval          # real run — needs GROQ_API_KEY in .env
+python -m scripts.eval --mock   # offline: verifies the harness + gold SQLs
+```
+
+Cases live in `evals/cases.py` and double as regression tests — each guards a
+fix we made to the prompt (e.g. معدل→total not AVG, no spurious status filter,
+correlated-subquery aliasing). When a real question comes back wrong, add it as a
+new case, fix the prompt, and re-run until accuracy is back to 100%.
 
 ## Notes
 

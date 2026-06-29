@@ -8,7 +8,7 @@ from ..models import Institution, StreamSummary
 
 router = APIRouter(tags=["aggregates"])
 
-INST_SORT = {"pass_rate", "count", "avg_moyenne", "institution"}
+INST_SORT = {"pass_rate", "count", "avg_bac", "avg_annual", "institution"}
 
 
 @router.get("/institutions", response_model=list[Institution])
@@ -33,7 +33,8 @@ def list_institutions(
                COUNT(*)                                AS count,
                SUM(passed)                             AS passed,
                ROUND(1.0 * SUM(passed) / COUNT(*), 4)  AS pass_rate,
-               ROUND(AVG(moyenne), 2)                  AS avg_moyenne
+               ROUND(AVG(total), 2)                    AS avg_bac,
+               ROUND(AVG(moyenne), 2)                  AS avg_annual
         FROM students{where}
         GROUP BY institution
         HAVING COUNT(*) >= ?
@@ -54,7 +55,8 @@ def list_streams():
                   COUNT(*)                                AS count,
                   SUM(passed)                             AS passed,
                   ROUND(1.0 * SUM(passed) / COUNT(*), 4)  AS pass_rate,
-                  ROUND(AVG(moyenne), 2)                  AS avg_moyenne
+                  ROUND(AVG(total), 2)                    AS avg_bac,
+                  ROUND(AVG(moyenne), 2)                  AS avg_annual
            FROM students
            GROUP BY stream
            ORDER BY count DESC"""

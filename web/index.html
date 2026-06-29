@@ -52,6 +52,7 @@
   .pill { padding: 2px 9px; border-radius: 999px; font-size: 12px; }
   .pill.pass { background: rgba(52,211,153,.15); color: var(--good); }
   .pill.fail { background: rgba(248,113,113,.15); color: var(--bad); }
+  .pill.pending { background: rgba(245,158,11,.15); color: #f59e0b; }
   .modal-bg {
     position: fixed; inset: 0; background: rgba(0,0,0,.6);
     display: none; align-items: center; justify-content: center; padding: 20px;
@@ -98,6 +99,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="search">بحث وتصفية</div>
     <div class="tab" data-tab="stats">إحصائيات</div>
+    <div class="tab" data-tab="ask">اسأل</div>
   </div>
 
   <div class="view active" id="view-search">
@@ -117,19 +119,23 @@
     </div>
     <div class="field">
       <label>النتيجة</label>
-      <select id="f-passed">
-        <option value="">الكل</option>
-        <option value="true">ناجح</option>
-        <option value="false">غير ناجح</option>
-      </select>
+      <select id="f-status"><option value="">الكل</option></select>
     </div>
     <div class="field">
-      <label>المعدل الأدنى</label>
-      <input id="f-min" type="number" step="0.5" placeholder="—" />
+      <label>معدل الباك الأدنى</label>
+      <input id="f-bac-min" type="number" step="0.5" placeholder="—" />
     </div>
     <div class="field">
-      <label>المعدل الأقصى</label>
-      <input id="f-max" type="number" step="0.5" placeholder="—" />
+      <label>معدل الباك الأقصى</label>
+      <input id="f-bac-max" type="number" step="0.5" placeholder="—" />
+    </div>
+    <div class="field">
+      <label>المعدل السنوي الأدنى</label>
+      <input id="f-ann-min" type="number" step="0.5" placeholder="—" />
+    </div>
+    <div class="field">
+      <label>المعدل السنوي الأقصى</label>
+      <input id="f-ann-max" type="number" step="0.5" placeholder="—" />
     </div>
     <div class="field">
       <label>بحث بالاسم</label>
@@ -138,9 +144,10 @@
     <div class="field">
       <label>الترتيب حسب</label>
       <select id="f-sort">
-        <option value="-moyenne">المعدل (تنازلي)</option>
-        <option value="moyenne">المعدل (تصاعدي)</option>
-        <option value="-total">المجموع (تنازلي)</option>
+        <option value="-total">معدل الباك (تنازلي)</option>
+        <option value="total">معدل الباك (تصاعدي)</option>
+        <option value="-moyenne">المعدل السنوي (تنازلي)</option>
+        <option value="moyenne">المعدل السنوي (تصاعدي)</option>
         <option value="name">الاسم</option>
       </select>
     </div>
@@ -162,7 +169,7 @@
     <thead>
       <tr>
         <th>الاسم</th><th>الشعبة</th><th>المؤسسة</th>
-        <th>المعدل</th><th>المجموع</th><th>الملاحظة</th><th>النتيجة</th>
+        <th>معدل الباك</th><th>المعدل السنوي</th><th>الملاحظة</th><th>النتيجة</th>
       </tr>
     </thead>
     <tbody id="rows"></tbody>
@@ -180,12 +187,26 @@
     </div>
     <div class="chart-grid">
       <div class="chart-card"><div class="ch" id="ch-pass"></div></div>
+      <div class="chart-card"><div class="ch" id="ch-status"></div></div>
       <div class="chart-card"><div class="ch" id="ch-mentions"></div></div>
       <div class="chart-card wide"><div class="ch" id="ch-subjects"></div></div>
       <div class="chart-card"><div class="ch" id="ch-top"></div></div>
       <div class="chart-card"><div class="ch" id="ch-remontada"></div></div>
     </div>
   </div><!-- /view-stats -->
+
+  <div class="view" id="view-ask">
+    <div class="stats-bar">
+      <input id="ask-q" placeholder="اكتب سؤالك… مثال: أفضل 5 معدلات في الرياضيات" style="flex:1" />
+      <button id="ask-btn">اسأل</button>
+    </div>
+    <div id="ask-note" class="count"></div>
+    <div id="ask-sql" style="font-family:monospace;direction:ltr;text-align:left;background:var(--panel2);
+         border:1px solid var(--border);border-radius:8px;padding:10px;margin:10px 0;display:none;"></div>
+    <div id="ask-stat" style="font-size:28px;font-weight:700;margin:10px 0;"></div>
+    <div class="chart-card" id="ask-chart-card" style="display:none;"><div class="ch" id="ask-chart"></div></div>
+    <table id="ask-table" style="display:none;"><thead id="ask-thead"></thead><tbody id="ask-tbody"></tbody></table>
+  </div><!-- /view-ask -->
 </div>
 
 <div class="modal-bg" id="modal-bg">
@@ -227,6 +248,7 @@ async function refreshFilters() {
   let changed = false;
   changed = fillSelect('f-stream', f.streams) || changed;
   changed = fillSelect('f-mention', f.mentions) || changed;
+  changed = fillSelect('f-status', f.statuses) || changed;
   fillInstitutions(f.institutions);
 
   const instEl = $('f-institution');
@@ -237,9 +259,13 @@ async function refreshFilters() {
   }
   if (changed) return refreshFilters();   // recompute with the cleaned selection
 
-  if (f.moyenne_range && f.moyenne_range.min != null) {
-    $('f-min').placeholder = f.moyenne_range.min;
-    $('f-max').placeholder = f.moyenne_range.max;
+  if (f.bac_range && f.bac_range.min != null) {
+    $('f-bac-min').placeholder = f.bac_range.min;
+    $('f-bac-max').placeholder = f.bac_range.max;
+  }
+  if (f.annual_range && f.annual_range.min != null) {
+    $('f-ann-min').placeholder = f.annual_range.min;
+    $('f-ann-max').placeholder = f.annual_range.max;
   }
   $('count').textContent = `عدد المطابق للاختيار الحالي: ${f.matching_count}`;
 }
@@ -250,9 +276,11 @@ function buildQuery() {
   add('stream', 'f-stream');
   add('mention', 'f-mention');
   add('institution', 'f-institution');
-  add('passed', 'f-passed');
-  add('min_avg', 'f-min');
-  add('max_avg', 'f-max');
+  add('status', 'f-status');
+  add('min_bac', 'f-bac-min');
+  add('max_bac', 'f-bac-max');
+  add('min_annual', 'f-ann-min');
+  add('max_annual', 'f-ann-max');
   add('search', 'f-search');
   p.set('sort', $('f-sort').value);
   p.set('limit', $('f-limit').value);
@@ -272,10 +300,10 @@ async function search() {
       <td>${s.name}</td>
       <td>${s.stream}</td>
       <td>${s.institution ?? '—'}</td>
-      <td>${s.moyenne ?? '—'}</td>
       <td>${s.total ?? '—'}</td>
+      <td>${s.moyenne ?? '—'}</td>
       <td>${s.mention ?? '—'}</td>
-      <td><span class="pill ${s.passed ? 'pass' : 'fail'}">${s.passed ? 'ناجح' : 'غير ناجح'}</span></td>`;
+      <td><span class="pill ${s.status === 'ناجح' ? 'pass' : (s.status === 'مؤجل' ? 'pending' : 'fail')}">${s.status ?? '—'}</span></td>`;
     tb.appendChild(tr);
   }
 }
@@ -283,15 +311,16 @@ async function search() {
 async function showStudent(reg) {
   const s = await (await fetch('/students/' + reg)).json();
   $('m-name').textContent = s.name;
-  $('m-meta').textContent = `${s.stream} · ${s.institution ?? '—'} · معدل ${s.moyenne ?? '—'} · مجموع ${s.total ?? '—'} · ${s.mention ?? ''}`;
+  $('m-meta').textContent = `${s.stream} · ${s.institution ?? '—'} · معدل الباك ${s.total ?? '—'} · المعدل السنوي ${s.moyenne ?? '—'} · ${s.mention ?? ''}`;
   $('m-grades').innerHTML = s.grades.map(g =>
     `<div class="grade-row"><span>${g.subject}</span><strong>${g.score ?? '—'}</strong></div>`).join('');
   $('modal-bg').classList.add('show');
 }
 
 function reset() {
-  ['f-stream','f-mention','f-institution','f-passed','f-min','f-max','f-search'].forEach(id => $(id).value = '');
-  $('f-sort').value = '-moyenne'; $('f-limit').value = '50';
+  ['f-stream','f-mention','f-institution','f-status','f-bac-min','f-bac-max',
+   'f-ann-min','f-ann-max','f-search'].forEach(id => $(id).value = '');
+  $('f-sort').value = '-total'; $('f-limit').value = '50';
 }
 
 // ---------- Statistics tab (charts, ApexCharts) ----------
@@ -317,6 +346,7 @@ function renderCharts() {
   const st = $('s-stream').value;
   const q = st ? ('?stream=' + encodeURIComponent(st)) : '';
   loadChart('ch-pass', '/stats/pass-rates');           // always per-stream overview
+  loadChart('ch-status', '/stats/status' + q);
   loadChart('ch-mentions', '/stats/mentions' + q);
   loadChart('ch-subjects', '/stats/subject-averages' + q);
   loadChart('ch-top', '/stats/top-performers' +
@@ -329,10 +359,57 @@ function showTab(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   $('view-' + name).classList.add('active');
   if (name === 'stats') renderCharts();
+  if (name === 'ask') checkAskStatus();
+}
+
+// ---------- Ask tab (natural language) ----------
+async function checkAskStatus() {
+  const s = await (await fetch('/ask/status')).json();
+  $('ask-note').textContent = s.enabled
+    ? 'اطرح سؤالك بالعربية أو الفرنسية أو الإنجليزية.'
+    : 'هذه الميزة معطّلة — أضف مفتاح Groq المجاني في ملف ‎.env‎ لتفعيلها.';
+}
+
+async function ask() {
+  const q = $('ask-q').value.trim();
+  if (!q) return;
+  $('ask-note').textContent = '… جارٍ التفكير';
+  ['ask-sql', 'ask-chart-card', 'ask-table'].forEach(id => $(id).style.display = 'none');
+  $('ask-stat').textContent = '';
+  let r;
+  try {
+    r = await fetch('/ask', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q }),
+    });
+  } catch (e) { $('ask-note').textContent = 'تعذّر الاتصال.'; return; }
+  const d = await r.json();
+  if (!r.ok) {
+    $('ask-note').textContent = (d.detail && (d.detail.error || d.detail)) || 'تعذّر تنفيذ السؤال.';
+    return;
+  }
+  $('ask-note').textContent = `عدد النتائج: ${d.row_count}`;
+  $('ask-sql').textContent = d.sql; $('ask-sql').style.display = 'block';
+
+  if (d.kind === 'stat') {
+    $('ask-stat').textContent = `${d.label}: ${d.value}`;
+  } else if (d.chart) {            // bar / pie / grouped / scatter — any ApexCharts spec
+    $('ask-chart-card').style.display = 'block';
+    draw('ask-chart', d.chart);
+  } else {
+    // table
+    const cols = d.columns;
+    $('ask-thead').innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+    $('ask-tbody').innerHTML = d.data.map(row =>
+      '<tr>' + cols.map(c => `<td>${row[c] ?? '—'}</td>`).join('') + '</tr>').join('');
+    $('ask-table').style.display = 'table';
+  }
 }
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => showTab(t.dataset.tab));
 $('s-refresh').onclick = renderCharts;
 $('s-stream').onchange = renderCharts;
+$('ask-btn').onclick = ask;
+$('ask-q').addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
 
 async function loadStatStreams() {
   const f = await (await fetch('/filters')).json();
@@ -341,7 +418,8 @@ async function loadStatStreams() {
 loadStatStreams();
 
 // When any filter changes, narrow the other dropdowns to valid options.
-['f-stream', 'f-mention', 'f-passed', 'f-min', 'f-max', 'f-institution'].forEach(
+['f-stream', 'f-mention', 'f-status', 'f-bac-min', 'f-bac-max',
+ 'f-ann-min', 'f-ann-max', 'f-institution'].forEach(
   id => $(id).addEventListener('change', refreshFilters)
 );
 

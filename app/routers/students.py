@@ -13,9 +13,14 @@ SORT_FIELDS = {"moyenne", "total", "name", "stream", "institution"}
 
 
 def _build_filters(
-    stream, institution, mention, passed, min_avg, max_avg, search
+    stream, institution, mention, passed, status,
+    min_bac, max_bac, min_annual, max_annual, search,
 ) -> tuple[str, list]:
-    """Return a SQL WHERE fragment + parameters from the given filters."""
+    """Return a SQL WHERE fragment + parameters from the given filters.
+
+    total   = معدل الباكالوريا (bac average)  -> min_bac / max_bac
+    moyenne = المعدل السنوي (annual average)   -> min_annual / max_annual
+    """
     clauses, params = [], []
     if stream:
         clauses.append("stream = ?"); params.append(stream)
@@ -25,10 +30,16 @@ def _build_filters(
         clauses.append("mention = ?"); params.append(mention)
     if passed is not None:
         clauses.append("passed = ?"); params.append(1 if passed else 0)
-    if min_avg is not None:
-        clauses.append("moyenne >= ?"); params.append(min_avg)
-    if max_avg is not None:
-        clauses.append("moyenne <= ?"); params.append(max_avg)
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if min_bac is not None:
+        clauses.append("total >= ?"); params.append(min_bac)
+    if max_bac is not None:
+        clauses.append("total <= ?"); params.append(max_bac)
+    if min_annual is not None:
+        clauses.append("moyenne >= ?"); params.append(min_annual)
+    if max_annual is not None:
+        clauses.append("moyenne <= ?"); params.append(max_annual)
     if search:
         clauses.append("name LIKE ?"); params.append(f"%{search}%")
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
@@ -40,17 +51,21 @@ def list_students(
     stream: str | None = Query(None, description="Filter by stream (شعبة)"),
     institution: str | None = Query(None, description="Filter by institution"),
     mention: str | None = Query(None, description="Filter by mention (ملاحظة)"),
-    passed: bool | None = Query(None, description="Only passed / only failed"),
-    min_avg: float | None = Query(None, description="Minimum annual average"),
-    max_avg: float | None = Query(None, description="Maximum annual average"),
+    passed: bool | None = Query(None, description="Only passed (ناجح) / not"),
+    status: str | None = Query(None, description="Outcome: ناجح / مؤجل / مرفوض"),
+    min_bac: float | None = Query(None, description="Min bac average (معدل الباك = total)"),
+    max_bac: float | None = Query(None, description="Max bac average (معدل الباك = total)"),
+    min_annual: float | None = Query(None, description="Min annual average (المعدل السنوي = moyenne)"),
+    max_annual: float | None = Query(None, description="Max annual average (المعدل السنوي = moyenne)"),
     search: str | None = Query(None, description="Search in student name"),
-    sort: str = Query("-moyenne", description="Sort field; prefix '-' for descending"),
+    sort: str = Query("-total", description="Sort field; prefix '-' for descending"),
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ):
     """List students matching the filters, sorted and paginated."""
     where, params = _build_filters(
-        stream, institution, mention, passed, min_avg, max_avg, search
+        stream, institution, mention, passed, status,
+        min_bac, max_bac, min_annual, max_annual, search,
     )
 
     # Parse sort: leading '-' means descending.

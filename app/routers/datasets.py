@@ -1,14 +1,12 @@
 """/datasets: upload new CSVs (auto-merge) and list what's been loaded."""
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
-import pandas as pd
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ..db import get_connection
-from ..ingest import load_dataframe
+from ..ingest import load_text
 
 router = APIRouter(tags=["datasets"])
 
@@ -39,18 +37,12 @@ async def upload_dataset(
         raise HTTPException(400, "الملف يجب أن يكون من نوع CSV")
 
     raw = await file.read()
-    try:
-        df = pd.read_csv(io.BytesIO(raw), dtype=str, encoding="utf-8-sig")
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, f"تعذّر قراءة الملف: {exc}")
-
-    stream_name = (stream or Path(file.filename).stem).strip()
-    if not stream_name:
-        raise HTTPException(400, "اسم الشعبة مطلوب")
+    text = raw.decode("utf-8-sig", errors="replace")
 
     conn = get_connection()  # writable
     try:
-        inserted = load_dataframe(df, stream_name, file.filename, conn)
+        # Arabic format uses the given/derived stream; export format reads its own.
+        inserted = load_text(text, stream or Path(file.filename).stem, file.filename, conn)
     except ValueError as exc:
         conn.close()
         raise HTTPException(422, str(exc))
@@ -58,7 +50,6 @@ async def upload_dataset(
 
     return {
         "status": "ok",
-        "stream": stream_name,
         "filename": file.filename,
         "rows_inserted": inserted,
     }
