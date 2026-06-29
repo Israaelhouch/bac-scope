@@ -49,10 +49,12 @@ def pass_rates(
 
 @router.get("/mentions")
 def mentions(stream: str | None = Query(None, description="Restrict to one stream")):
-    """Distribution of mentions (ملاحظات)."""
-    where, params = ("", [])
+    """Distribution of honor grades (ملاحظات) among passed students."""
+    clauses = ["mention IS NOT NULL"]
+    params: list = []
     if stream:
-        where, params = (" WHERE stream = ?", [stream])
+        clauses.append("stream = ?"); params.append(stream)
+    where = " WHERE " + " AND ".join(clauses)
 
     conn = get_connection(read_only=True)
     rows = [dict(r) for r in conn.execute(
@@ -67,6 +69,30 @@ def mentions(stream: str | None = Query(None, description="Restrict to one strea
         [r["mention"] for r in rows],
         [r["count"] for r in rows],
         title="توزيع الملاحظات" + (f" — {stream}" if stream else ""),
+    )
+    return {"data": rows, "chart": chart}
+
+
+@router.get("/status")
+def status_breakdown(stream: str | None = Query(None, description="Restrict to one stream")):
+    """Outcome breakdown: ناجح / مؤجل / مرفوض."""
+    where, params = ("", [])
+    if stream:
+        where, params = (" WHERE stream = ?", [stream])
+
+    conn = get_connection(read_only=True)
+    rows = [dict(r) for r in conn.execute(
+        f"""SELECT status, COUNT(*) AS count
+            FROM students{where}
+            GROUP BY status ORDER BY count DESC""",
+        params,
+    ).fetchall()]
+    conn.close()
+
+    chart = charts.pie(
+        [r["status"] for r in rows],
+        [r["count"] for r in rows],
+        title="توزيع النتائج" + (f" — {stream}" if stream else ""),
     )
     return {"data": rows, "chart": chart}
 
