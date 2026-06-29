@@ -74,6 +74,30 @@ def init_db(conn: sqlite3.Connection | None = None) -> None:
         conn.close()
 
 
+# Columns the current code expects on `students`. Used to detect a stale DB
+# (e.g. one seeded before a schema change) and tell the user to re-seed.
+EXPECTED_STUDENT_COLUMNS = {
+    "registration_number", "id_number", "name", "institution", "stream",
+    "result_raw", "passed", "status", "mention", "total", "moyenne",
+}
+
+
+def schema_status() -> dict:
+    """Report whether the DB exists and matches the expected schema.
+
+    Returns {"state": "ok" | "missing" | "stale", "missing_columns": [...]}.
+    """
+    if not DB_PATH.exists():
+        return {"state": "missing", "missing_columns": []}
+    conn = get_connection(read_only=True)
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(students)")}
+    finally:
+        conn.close()
+    missing = sorted(EXPECTED_STUDENT_COLUMNS - cols)
+    return {"state": "ok" if not missing else "stale", "missing_columns": missing}
+
+
 def reset_db() -> None:
     """Drop all data (used by seed for a clean reload)."""
     conn = get_connection()

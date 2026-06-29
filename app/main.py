@@ -37,6 +37,25 @@ app.include_router(datasets.router)
 app.include_router(ask.router)
 
 
+@app.on_event("startup")
+def _check_schema_on_startup():
+    """Warn loudly (instead of cryptic 500s) if the DB is missing or stale."""
+    from .db import schema_status
+
+    s = schema_status()
+    if s["state"] == "missing":
+        print("\n" + "=" * 60)
+        print("⚠️  No database found (data/bac.db).")
+        print("    Run:  python -m scripts.seed")
+        print("=" * 60 + "\n")
+    elif s["state"] == "stale":
+        print("\n" + "=" * 60)
+        print("⚠️  Database schema is OUT OF DATE.")
+        print("    Missing columns: " + ", ".join(s["missing_columns"]))
+        print("    Run:  python -m scripts.seed   to rebuild it.")
+        print("=" * 60 + "\n")
+
+
 @app.options("/{rest_of_path:path}", include_in_schema=False)
 def preflight(rest_of_path: str):
     """Answer any OPTIONS request (e.g. CORS preflight) with 204 instead of 405."""
@@ -50,8 +69,12 @@ def info():
 
 @app.get("/health", tags=["meta"])
 def health():
-    from .db import get_connection
+    from .db import schema_status, get_connection
 
+    s = schema_status()
+    if s["state"] != "ok":
+        return {"status": s["state"], "hint": "run: python -m scripts.seed",
+                "missing_columns": s["missing_columns"]}
     conn = get_connection(read_only=True)
     n = conn.execute("SELECT COUNT(*) FROM students").fetchone()[0]
     conn.close()

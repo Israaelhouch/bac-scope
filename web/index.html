@@ -100,6 +100,7 @@
     <div class="tab active" data-tab="search">بحث وتصفية</div>
     <div class="tab" data-tab="stats">إحصائيات</div>
     <div class="tab" data-tab="ask">اسأل</div>
+    <div class="tab" data-tab="upload">رفع ملف</div>
   </div>
 
   <div class="view active" id="view-search">
@@ -207,6 +208,25 @@
     <div class="chart-card" id="ask-chart-card" style="display:none;"><div class="ch" id="ask-chart"></div></div>
     <table id="ask-table" style="display:none;"><thead id="ask-thead"></thead><tbody id="ask-tbody"></tbody></table>
   </div><!-- /view-ask -->
+
+  <div class="view" id="view-upload">
+    <div class="stats-bar">
+      <div class="field">
+        <label>ملف CSV (عربي أو تصدير)</label>
+        <input id="up-file" type="file" accept=".csv" />
+      </div>
+      <div class="field">
+        <label>الشعبة (اختياري — للصيغة العربية)</label>
+        <input id="up-stream" placeholder="مثال: رياضيات" />
+      </div>
+      <button id="up-btn">رفع</button>
+    </div>
+    <div id="up-note" class="count"></div>
+    <table style="margin-top:16px;">
+      <thead><tr><th>الشعبة</th><th>الملف</th><th>عدد الأسطر</th><th>التاريخ</th></tr></thead>
+      <tbody id="up-tbody"></tbody>
+    </table>
+  </div><!-- /view-upload -->
 </div>
 
 <div class="modal-bg" id="modal-bg">
@@ -360,6 +380,38 @@ function showTab(name) {
   $('view-' + name).classList.add('active');
   if (name === 'stats') renderCharts();
   if (name === 'ask') checkAskStatus();
+  if (name === 'upload') loadDatasets();
+}
+
+// ---------- Upload tab ----------
+async function loadDatasets() {
+  try {
+    const d = await (await fetch('/datasets')).json();
+    $('up-tbody').innerHTML = d.items.map(r =>
+      `<tr><td>${r.stream}</td><td>${r.filename ?? '—'}</td><td>${r.row_count}</td><td>${(r.uploaded_at || '').slice(0, 10)}</td></tr>`).join('');
+  } catch (e) { /* ignore */ }
+}
+
+async function uploadFile() {
+  const f = $('up-file').files[0];
+  if (!f) { $('up-note').textContent = 'اختر ملف CSV أولاً.'; return; }
+  const fd = new FormData();
+  fd.append('file', f);
+  const st = $('up-stream').value.trim();
+  if (st) fd.append('stream', st);
+  $('up-note').textContent = '… جارٍ الرفع';
+  let r;
+  try { r = await fetch('/datasets', { method: 'POST', body: fd }); }
+  catch (e) { $('up-note').textContent = 'تعذّر الاتصال.'; return; }
+  const d = await r.json();
+  if (!r.ok) {
+    $('up-note').textContent = (d.detail && (d.detail.error || d.detail)) || 'فشل الرفع.';
+    return;
+  }
+  $('up-note').textContent = `تم الرفع: ${d.rows_inserted} سطر من ${d.filename}`;
+  $('up-file').value = ''; $('up-stream').value = '';
+  loadDatasets();
+  refreshFilters();   // new data may add streams/values
 }
 
 // ---------- Ask tab (natural language) ----------
@@ -410,6 +462,7 @@ $('s-refresh').onclick = renderCharts;
 $('s-stream').onchange = renderCharts;
 $('ask-btn').onclick = ask;
 $('ask-q').addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+$('up-btn').onclick = uploadFile;
 
 async function loadStatStreams() {
   const f = await (await fetch('/filters')).json();

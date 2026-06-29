@@ -26,9 +26,10 @@ uvicorn app.main:app --reload
 
 Then open:
 
-- **http://127.0.0.1:8000/** — the **web UI**: pick filters from dropdowns
-  (stream, mention, institution, average range, sort), see results in a table,
-  click any student to view all their grades.
+- **http://127.0.0.1:8000/** — the **web UI**: tabs for filtering/search,
+  statistics (charts), natural-language **اسأل**, and **رفع ملف** (upload a CSV).
+- The server prints a clear "run `python -m scripts.seed`" banner (and `/health`
+  reports it) if the database is missing or its schema is out of date.
 - **http://127.0.0.1:8000/docs** — the interactive API docs (raw JSON, "Try it out").
 
 > If the table is empty, the database hasn't been seeded — run

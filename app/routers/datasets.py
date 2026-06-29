@@ -1,6 +1,7 @@
 """/datasets: upload new CSVs (auto-merge) and list what's been loaded."""
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -46,6 +47,13 @@ async def upload_dataset(
     except ValueError as exc:
         conn.close()
         raise HTTPException(422, str(exc))
+    except sqlite3.OperationalError as exc:
+        conn.close()
+        raise HTTPException(
+            500,
+            "قاعدة البيانات قديمة أو غير مهيّأة. نفّذ: python -m scripts.seed  "
+            f"(التفاصيل: {exc})",
+        )
     conn.close()
 
     return {
