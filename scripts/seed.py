@@ -1,4 +1,7 @@
-"""Seed the SQLite database from the 7 raw CSV files in data/raw/.
+"""Seed the SQLite database from CSV files.
+
+Uses data/raw/ if it contains CSVs (your real data, gitignored); otherwise
+falls back to data/sample/ (committed anonymized sample) so a fresh clone works.
 
 Run from the project root:  python -m scripts.seed
 """
@@ -12,7 +15,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.db import reset_db, get_connection  # noqa: E402
 from app.ingest import load_csv  # noqa: E402
 
-RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
+_BASE = Path(__file__).resolve().parent.parent / "data"
+RAW_DIR = _BASE / "raw"
+SAMPLE_DIR = _BASE / "sample"
+
+
+def _source_dir() -> Path:
+    """Prefer real data in data/raw/, else the committed sample."""
+    if RAW_DIR.exists() and any(RAW_DIR.glob("*.csv")):
+        return RAW_DIR
+    return SAMPLE_DIR
 
 # Map each raw file to its Bac stream (شعبة).
 FILE_TO_STREAM = {
@@ -27,11 +39,13 @@ FILE_TO_STREAM = {
 
 
 def main() -> None:
+    source = _source_dir()
+    print(f"Seeding from: {source.relative_to(_BASE.parent)}")
     reset_db()
     conn = get_connection()
     total = 0
     for filename, stream in FILE_TO_STREAM.items():
-        path = RAW_DIR / filename
+        path = source / filename
         if not path.exists():
             print(f"  ! missing {filename}, skipping")
             continue
