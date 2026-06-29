@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>bac-scope — نتائج الباكالوريا</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #273549;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+    --good: #34d399; --bad: #f87171; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
+    font-size: 15px;
+  }
+  header {
+    padding: 18px 24px; background: var(--panel);
+    border-bottom: 1px solid var(--border); display: flex;
+    align-items: baseline; gap: 12px;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .wrap { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .filters {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; align-items: end;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  select, input {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; font-family: inherit;
+  }
+  .actions { display: flex; gap: 10px; margin: 16px 0; align-items: center; }
+  button {
+    background: var(--accent); color: #06283d; border: none;
+    border-radius: 8px; padding: 9px 18px; font-size: 14px;
+    font-weight: 600; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .count { color: var(--muted); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 12px; font-weight: 600; }
+  tbody tr:hover { background: var(--panel2); cursor: pointer; }
+  .pill { padding: 2px 9px; border-radius: 999px; font-size: 12px; }
+  .pill.pass { background: rgba(52,211,153,.15); color: var(--good); }
+  .pill.fail { background: rgba(248,113,113,.15); color: var(--bad); }
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px; max-width: 520px; width: 100%;
+    max-height: 80vh; overflow: auto;
+  }
+  .modal h2 { margin: 0 0 4px; font-size: 18px; }
+  .modal .meta { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .grade-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .close { float: left; cursor: pointer; color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 40px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+  .tab {
+    padding: 8px 18px; border-radius: 8px; cursor: pointer; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border);
+  }
+  .tab.active { background: var(--accent); color: #06283d; font-weight: 600; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .stats-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; }
+  .chart-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px;
+  }
+  .chart-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 8px;
+  }
+  .chart-card .ch { width: 100%; height: 330px; }
+  .chart-card.wide { grid-column: 1 / -1; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+</head>
+<body>
+<header>
+  <h1>bac-scope</h1>
+  <span class="sub">تحليل نتائج الباكالوريا</span>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab active" data-tab="search">بحث وتصفية</div>
+    <div class="tab" data-tab="stats">إحصائيات</div>
+  </div>
+
+  <div class="view active" id="view-search">
+  <div class="filters" id="filters">
+    <div class="field">
+      <label>الشعبة</label>
+      <select id="f-stream"><option value="">الكل</option></select>
+    </div>
+    <div class="field">
+      <label>الملاحظة</label>
+      <select id="f-mention"><option value="">الكل</option></select>
+    </div>
+    <div class="field">
+      <label>المؤسسة</label>
+      <input id="f-institution" list="inst-list" placeholder="كل المؤسسات" />
+      <datalist id="inst-list"></datalist>
+    </div>
+    <div class="field">
+      <label>النتيجة</label>
+      <select id="f-passed">
+        <option value="">الكل</option>
+        <option value="true">ناجح</option>
+        <option value="false">غير ناجح</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>المعدل الأدنى</label>
+      <input id="f-min" type="number" step="0.5" placeholder="—" />
+    </div>
+    <div class="field">
+      <label>المعدل الأقصى</label>
+      <input id="f-max" type="number" step="0.5" placeholder="—" />
+    </div>
+    <div class="field">
+      <label>بحث بالاسم</label>
+      <input id="f-search" placeholder="اسم التلميذ" />
+    </div>
+    <div class="field">
+      <label>الترتيب حسب</label>
+      <select id="f-sort">
+        <option value="-moyenne">المعدل (تنازلي)</option>
+        <option value="moyenne">المعدل (تصاعدي)</option>
+        <option value="-total">المجموع (تنازلي)</option>
+        <option value="name">الاسم</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>عدد النتائج</label>
+      <select id="f-limit">
+        <option>25</option><option selected>50</option><option>100</option><option>200</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btn-search">بحث</button>
+    <button class="ghost" id="btn-reset">إعادة تعيين</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>الاسم</th><th>الشعبة</th><th>المؤسسة</th>
+        <th>المعدل</th><th>المجموع</th><th>الملاحظة</th><th>النتيجة</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="empty">اختر المرشّحات ثم اضغط «بحث»</div>
+  </div><!-- /view-search -->
+
+  <div class="view" id="view-stats">
+    <div class="stats-bar">
+      <div class="field">
+        <label>الشعبة</label>
+        <select id="s-stream"><option value="">كل الشعب</option></select>
+      </div>
+      <button id="s-refresh">تحديث</button>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-card"><div class="ch" id="ch-pass"></div></div>
+      <div class="chart-card"><div class="ch" id="ch-mentions"></div></div>
+      <div class="chart-card wide"><div class="ch" id="ch-subjects"></div></div>
+      <div class="chart-card"><div class="ch" id="ch-top"></div></div>
+      <div class="chart-card"><div class="ch" id="ch-remontada"></div></div>
+    </div>
+  </div><!-- /view-stats -->
+</div>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal" id="modal">
+    <span class="close" id="modal-close">✕ إغلاق</span>
+    <h2 id="m-name"></h2>
+    <div class="meta" id="m-meta"></div>
+    <div id="m-grades"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+// Rebuild a <select>; keep the current value only if still valid.
+// Returns true if the value had to be cleared.
+function fillSelect(id, values) {
+  const el = $(id);
+  const keep = el.value;
+  el.innerHTML = '<option value="">الكل</option>';
+  for (const v of values) el.add(new Option(v, v));
+  el.value = values.includes(keep) ? keep : '';
+  return el.value !== keep;
+}
+
+function fillInstitutions(institutions) {
+  const dl = $('inst-list');
+  dl.innerHTML = '';
+  for (const inst of institutions) {
+    dl.appendChild(new Option(`${inst.name} (${inst.count})`, inst.name));
+  }
+}
+
+// Re-fetch the option lists narrowed to the current selection (faceted).
+// If a previously selected value is no longer valid, clear it and recompute,
+// so dropdowns and the live count always reflect a consistent selection.
+async function refreshFilters() {
+  const f = await (await fetch('/filters?' + buildQuery())).json();
+  let changed = false;
+  changed = fillSelect('f-stream', f.streams) || changed;
+  changed = fillSelect('f-mention', f.mentions) || changed;
+  fillInstitutions(f.institutions);
+
+  const instEl = $('f-institution');
+  const validInst = f.institutions.map(i => i.name);
+  if (instEl.value && !validInst.includes(instEl.value)) {
+    instEl.value = '';
+    changed = true;
+  }
+  if (changed) return refreshFilters();   // recompute with the cleaned selection
+
+  if (f.moyenne_range && f.moyenne_range.min != null) {
+    $('f-min').placeholder = f.moyenne_range.min;
+    $('f-max').placeholder = f.moyenne_range.max;
+  }
+  $('count').textContent = `عدد المطابق للاختيار الحالي: ${f.matching_count}`;
+}
+
+function buildQuery() {
+  const p = new URLSearchParams();
+  const add = (k, el) => { const v = $(el).value.trim(); if (v) p.set(k, v); };
+  add('stream', 'f-stream');
+  add('mention', 'f-mention');
+  add('institution', 'f-institution');
+  add('passed', 'f-passed');
+  add('min_avg', 'f-min');
+  add('max_avg', 'f-max');
+  add('search', 'f-search');
+  p.set('sort', $('f-sort').value);
+  p.set('limit', $('f-limit').value);
+  return p.toString();
+}
+
+async function search() {
+  const data = await (await fetch('/students?' + buildQuery())).json();
+  const tb = $('rows'); tb.innerHTML = '';
+  $('count').textContent = `عدد النتائج المطابقة: ${data.total} (معروض ${data.count})`;
+  $('empty').style.display = data.items.length ? 'none' : 'block';
+  if (!data.items.length) $('empty').textContent = 'لا توجد نتائج مطابقة';
+  for (const s of data.items) {
+    const tr = document.createElement('tr');
+    tr.onclick = () => showStudent(s.registration_number);
+    tr.innerHTML = `
+      <td>${s.name}</td>
+      <td>${s.stream}</td>
+      <td>${s.institution ?? '—'}</td>
+      <td>${s.moyenne ?? '—'}</td>
+      <td>${s.total ?? '—'}</td>
+      <td>${s.mention ?? '—'}</td>
+      <td><span class="pill ${s.passed ? 'pass' : 'fail'}">${s.passed ? 'ناجح' : 'غير ناجح'}</span></td>`;
+    tb.appendChild(tr);
+  }
+}
+
+async function showStudent(reg) {
+  const s = await (await fetch('/students/' + reg)).json();
+  $('m-name').textContent = s.name;
+  $('m-meta').textContent = `${s.stream} · ${s.institution ?? '—'} · معدل ${s.moyenne ?? '—'} · مجموع ${s.total ?? '—'} · ${s.mention ?? ''}`;
+  $('m-grades').innerHTML = s.grades.map(g =>
+    `<div class="grade-row"><span>${g.subject}</span><strong>${g.score ?? '—'}</strong></div>`).join('');
+  $('modal-bg').classList.add('show');
+}
+
+function reset() {
+  ['f-stream','f-mention','f-institution','f-passed','f-min','f-max','f-search'].forEach(id => $(id).value = '');
+  $('f-sort').value = '-moyenne'; $('f-limit').value = '50';
+}
+
+// ---------- Statistics tab (charts, ApexCharts) ----------
+const _charts = {};   // keep instances so we can re-render
+
+function draw(divId, spec) {
+  // Apply dark theme + transparent background to the spec from the API.
+  spec.theme = { mode: 'dark' };
+  spec.chart = Object.assign({ background: 'transparent', fontFamily: 'inherit' }, spec.chart);
+  if (_charts[divId]) _charts[divId].destroy();
+  _charts[divId] = new ApexCharts(document.getElementById(divId), spec);
+  _charts[divId].render();
+}
+
+async function loadChart(divId, url) {
+  try {
+    const r = await (await fetch(url)).json();
+    draw(divId, r.chart);
+  } catch (e) { /* leave the card empty on error */ }
+}
+
+function renderCharts() {
+  const st = $('s-stream').value;
+  const q = st ? ('?stream=' + encodeURIComponent(st)) : '';
+  loadChart('ch-pass', '/stats/pass-rates');           // always per-stream overview
+  loadChart('ch-mentions', '/stats/mentions' + q);
+  loadChart('ch-subjects', '/stats/subject-averages' + q);
+  loadChart('ch-top', '/stats/top-performers' +
+    (st ? ('?stream=' + encodeURIComponent(st) + '&limit=10') : '?per_stream=true&limit=3'));
+  loadChart('ch-remontada', '/stats/remontada' + (st ? (q + '&limit=10') : '?limit=10'));
+}
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $('view-' + name).classList.add('active');
+  if (name === 'stats') renderCharts();
+}
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => showTab(t.dataset.tab));
+$('s-refresh').onclick = renderCharts;
+$('s-stream').onchange = renderCharts;
+
+async function loadStatStreams() {
+  const f = await (await fetch('/filters')).json();
+  for (const s of f.streams) $('s-stream').add(new Option(s, s));
+}
+loadStatStreams();
+
+// When any filter changes, narrow the other dropdowns to valid options.
+['f-stream', 'f-mention', 'f-passed', 'f-min', 'f-max', 'f-institution'].forEach(
+  id => $(id).addEventListener('change', refreshFilters)
+);
+
+$('btn-search').onclick = search;
+$('btn-reset').onclick = () => { reset(); refreshFilters(); search(); };
+$('modal-close').onclick = () => $('modal-bg').classList.remove('show');
+$('modal-bg').onclick = (e) => { if (e.target === $('modal-bg')) $('modal-bg').classList.remove('show'); };
+document.addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+
+refreshFilters().then(search);
+</script>
+</body>
+</html>
