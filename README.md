@@ -158,9 +158,17 @@ GET /students?search=محمد
 curl -F "file=@results_2026.csv" -F "stream=رياضيات" http://127.0.0.1:8000/datasets
 ```
 
-The uploaded CSV must contain at least `رقم التسجيل`, `الاسم`, `النتيجة`
-(other columns are treated as subject grades). Re-uploading a student
-(same registration number) updates their record.
+Two CSV formats are auto-detected:
+
+1. **Arabic format** — Arabic headers (`رقم التسجيل`, `الاسم`, `النتيجة`, …),
+   one column per named subject (the original files).
+2. **Export format** — English headers (`registration_number`, `student_name`,
+   `section`, `result_status`, `overall_grade`, `annual_average`) followed by a
+   variable number of `grade_N` / `subject_N` pairs.
+
+Both are normalized the same way (tatweel + diacritics stripped, subject/stream
+names canonicalized). Rows without a name, or files matching neither format, are
+rejected. Re-uploading a student (same registration number) updates the record.
 
 ---
 
