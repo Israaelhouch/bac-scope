@@ -51,6 +51,19 @@ def pie(labels: list, values: list, title: str) -> dict:
     }
 
 
+def scatter(x: list, y: list, x_title: str, y_title: str, title: str = "") -> dict:
+    """Scatter plot for two numeric columns (e.g. annual vs bac average)."""
+    return {
+        "chart": {"type": "scatter", "height": 340, "zoom": {"enabled": True},
+                  "toolbar": {"show": False}},
+        "series": [{"name": title or "نقاط", "data": [[a, b] for a, b in zip(x, y)]}],
+        "xaxis": {"title": {"text": x_title}, "tickAmount": 8},
+        "yaxis": {"title": {"text": y_title}},
+        "colors": [PALETTE[0]],
+        "title": {"text": title, "align": "right"},
+    }
+
+
 def grouped_bar(series: dict[str, tuple[list, list]], title: str) -> dict:
     """series: {name: (categories, values)} -> grouped vertical bars.
 
