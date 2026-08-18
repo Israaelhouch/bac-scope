@@ -45,6 +45,8 @@ NOTES = """\
 - عمود moyenne = المعدل السنوي (معدل السنة الدراسية)، لا يُستعمل إلا إذا ذُكر "السنوي" صراحةً.
 - لأسئلة المواد استعمل جدول grades مع ربطه بـ students.
 - عند المقارنة بمتوسط مجموعة (مثل "فوق متوسط شعبته/مؤسسته") استعمل استعلامًا فرعيًا مترابطًا بأسماء مستعارة مختلفة للجدول الخارجي والداخلي (s و t)، وإلا سيُحسب المتوسط العام بالخطأ. مثال: ... FROM students s WHERE s.total > (SELECT AVG(t.total) FROM students t WHERE t.stream = s.stream).
+- عند طلب "الأفضل/الأول في كل شعبة (أو كل مؤسسة)" استعمل RANK() OVER (PARTITION BY ...) وليس ROW_NUMBER().
+  السبب: إذا تساوى تلميذان في أعلى معدل داخل نفس الشعبة فإن ROW_NUMBER() يحذف أحدهما دون تنبيه، بينما RANK() يُبقي المتساوين معًا. المطلوب دائمًا إظهار كل المتساوين في المرتبة الأولى.
 """
 
 EXAMPLES = """\
@@ -81,6 +83,12 @@ SQL: SELECT s.name, s.stream, s.total FROM students s WHERE s.total > (SELECT AV
 
 س: أكبر ريمونتادا
 SQL: SELECT name, stream, ROUND(total - moyenne, 2) AS gap FROM students ORDER BY gap DESC LIMIT 10;
+
+س: أفضل التلاميذ في كل شعبة حسب معدل الباك
+SQL: SELECT name, stream, total FROM (SELECT *, RANK() OVER (PARTITION BY stream ORDER BY total DESC) rk FROM students) WHERE rk = 1;
+
+س: أول تلميذ في كل مؤسسة
+SQL: SELECT name, institution, total FROM (SELECT *, RANK() OVER (PARTITION BY institution ORDER BY total DESC) rk FROM students) WHERE rk = 1;
 """
 
 

@@ -129,10 +129,41 @@ POST /ask   { "question": "أفضل 5 معدلات في الرياضيات" }
 
 ```
 GROQ_API_KEY=your_key_here
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-20b     # optional — this is the default
 ```
 
 Without a key, `/ask` returns `503` and the rest of the API works normally.
+
+**Choosing the model.** Providers retire model IDs without much warning — the
+original default here stopped resolving mid-project and took `/ask` down. So the
+adapter doesn't trust a single ID: on `model_not_found` it asks the account which
+models it can actually use and retries with the best available, reporting that
+list instead of a bare 404.
+
+Which model to prefer is then a measurement, not a guess. The eval harness scores
+any candidate:
+
+```bash
+python -m scripts.eval --list-models              # what this key can use
+python -m scripts.eval --model qwen/qwen3.6-27b   # score a candidate
+```
+
+| Model | Execution accuracy | Note |
+|---|---|---|
+| `openai/gpt-oss-20b` | **9/9** | **default** — same accuracy, cheapest and fastest |
+| `openai/gpt-oss-120b` | 9/9 | 6× the size for no measurable gain here |
+| `qwen/qwen3.6-27b` | 9/9 | needs `<think>` stripping, handled in the adapter |
+| `allam-2-7b` | 2/9 | Arabic-native but too small — emits invalid SQL |
+
+The last row is the interesting one: an **Arabic-specialised** model does *worse*
+at Arabic text-to-SQL than a general model, because the hard part is the SQL, not
+the Arabic. The schema-linking prompt is what carries the language.
+
+Benchmarking also exposed three bugs in this repo — a gold query that dropped
+tied students, a comparison that punished correct answers for returning an extra
+column, and reasoning-model output that tripped the SQL validator. All three are
+fixed; the tie case became a prompt rule (`RANK()`, not `ROW_NUMBER()`) that took
+every model from 8/9 back to 9/9.
 Safety: the LLM only proposes SQL; writes are blocked by validation **and** by a
 read-only database connection.
 

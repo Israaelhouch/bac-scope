@@ -4,11 +4,17 @@ Usage (from the bac-scope/ folder, with the DB seeded):
     python -m scripts.eval            # real run — needs GROQ_API_KEY in .env
     python -m scripts.eval --mock     # offline: uses gold SQL as the "model"
                                       # output, to verify the harness itself
+    python -m scripts.eval --model openai/gpt-oss-120b    # score one model
+    python -m scripts.eval --list-models                  # what the key can use
 
 For each case it generates SQL from the question, runs it AND the gold SQL
 read-only, and compares the results. Prints PASS/FAIL per case + overall
 accuracy. On failure it shows both SQLs so you can turn the gap into a new
 prompt rule/example.
+
+Because scoring is per-model, this doubles as a model chooser: run it against
+each candidate and let execution accuracy decide the default, rather than
+picking whichever ID a tutorial happened to use.
 """
 from __future__ import annotations
 
@@ -50,6 +56,36 @@ def _scalar(rows: list[dict]):
     return list(rows[0].values())[0]
 
 
+def _covers(gold_row: tuple, model_row: tuple) -> bool:
+    """True if a model row carries every value the gold row has.
+
+    A model that answers "who passed" with (name, stream, total) is not wrong
+    because gold only asked for (name, total) — it returned a superset. Strict
+    equality would score that as a miss, so extra columns are tolerated as long
+    as nothing gold asked for is missing.
+    """
+    remaining = list(model_row)
+    for value in gold_row:
+        if value in remaining:
+            remaining.remove(value)
+        else:
+            return False
+    return True
+
+
+def _matches_with_extra_columns(gold: list[tuple], model: list[tuple]) -> bool:
+    """Pair every gold row with a distinct model row that covers it."""
+    if len(gold) != len(model):
+        return False
+    unused = list(model)
+    for gold_row in gold:
+        match = next((m for m in unused if _covers(gold_row, m)), None)
+        if match is None:
+            return False
+        unused.remove(match)
+    return True
+
+
 def compare(mode: str, gold: list[dict], model: list[dict]) -> bool:
     if mode == "scalar":
         g, m = _scalar(gold), _scalar(model)
@@ -59,15 +95,46 @@ def compare(mode: str, gold: list[dict], model: list[dict]) -> bool:
             return str(g) == str(m)
     g, m = _norm(gold), _norm(model)
     if mode == "ordered":
-        return g == m
-    return set(g) == set(m)  # "set"
+        return g == m or (len(g) == len(m) and all(map(_covers, g, m)))
+    return set(g) == set(m) or _matches_with_extra_columns(g, m)  # "set"
+
+
+def _print_available_models() -> int:
+    """Print the chat models this API key can use. Returns an exit code."""
+    if not llm.is_configured():
+        print("GROQ_API_KEY is not set — add it to .env first.")
+        return 1
+    import os
+
+    from groq import Groq
+
+    models = llm.available_models(Groq(api_key=os.environ["GROQ_API_KEY"]))
+    if not models:
+        print("Could not list models (check the key and your connection).")
+        return 1
+    print("Chat models available to this key:")
+    for m in models:
+        marker = "  <- default" if m == llm.DEFAULT_MODEL else ""
+        print(f"  {m}{marker}")
+    return 0
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mock", action="store_true",
                     help="use each case's gold SQL as the model output (tests the harness)")
+    ap.add_argument("--model", default=None,
+                    help="Groq model ID to score (default: GROQ_MODEL, else the built-in default)")
+    ap.add_argument("--list-models", action="store_true",
+                    help="list the chat models this API key can use, then exit")
     args = ap.parse_args()
+
+    if args.list_models:
+        sys.exit(_print_available_models())
+
+    model = args.model or llm.configured_model()
+    if not args.mock:
+        print(f"Model: {model}\n")
 
     conn = get_connection(read_only=True)
     passed = 0
@@ -78,7 +145,7 @@ def main() -> None:
                 model_sql = gold_sql
             else:
                 prompt = nl2sql.build_system_prompt(conn, scope=case.get("scope"))
-                model_sql = nl2sql.validate_sql(llm.generate_sql(q, prompt))
+                model_sql = nl2sql.validate_sql(llm.generate_sql(q, prompt, model=model))
             _, model_rows = nl2sql.run_query(model_sql, conn)
             _, gold_rows = nl2sql.run_query(gold_sql, conn)
             ok = compare(mode, gold_rows, model_rows)
@@ -94,7 +161,8 @@ def main() -> None:
     conn.close()
 
     total = len(CASES)
-    print(f"\nAccuracy: {passed}/{total} = {100 * passed / total:.0f}%")
+    label = "gold SQL (mock)" if args.mock else model
+    print(f"\nAccuracy [{label}]: {passed}/{total} = {100 * passed / total:.0f}%")
     sys.exit(0 if passed == total else 1)
 
 

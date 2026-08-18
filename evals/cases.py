@@ -76,12 +76,17 @@ CASES = [
         "guards": "correlated subquery with distinct aliases (per-stream, not global)",
     },
     # --- per-group top-N (window function) ---
+    # The question is deliberately PLURAL (أفضل التلاميذ). The singular wording
+    # was ambiguous whenever two students tied for the top of a stream: gold used
+    # ROW_NUMBER() and silently dropped one, so a model that correctly returned
+    # both was scored as wrong. RANK() keeps ties, and the plural question makes
+    # that the only reasonable reading.
     {
-        "q": "أفضل تلميذ في كل شعبة حسب معدل الباك",
+        "q": "أفضل التلاميذ في كل شعبة حسب معدل الباك",
         "gold": "SELECT name, stream, total FROM ("
-                "SELECT *, ROW_NUMBER() OVER (PARTITION BY stream ORDER BY total DESC) rk "
+                "SELECT *, RANK() OVER (PARTITION BY stream ORDER BY total DESC) rk "
                 "FROM students) WHERE rk=1",
         "mode": "set",
-        "guards": "top-N per group (window function)",
+        "guards": "top-N per group (window function); ties kept",
     },
 ]
